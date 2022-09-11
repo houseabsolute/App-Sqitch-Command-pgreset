@@ -228,7 +228,10 @@ sub _start_new_sqitch {
 
     say 'Running sqitch init' or die $!;
     my $dir = pushd( $self->_cwd );
-    $self->_run_or_die( qw( sqitch --quiet init ), $self->_project );
+    $self->_run_or_die(
+        qw( sqitch --quiet init --engine pg ),
+        $self->_project
+    );
 
     return;
 }
