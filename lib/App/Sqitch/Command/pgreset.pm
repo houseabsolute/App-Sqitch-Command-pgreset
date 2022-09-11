@@ -171,12 +171,23 @@ sub execute {
 sub _dump_database {
     my $self = shift;
 
+    my $db_uri = $self->_real_target->uri;
+    $db_uri->dbname( $self->_db_name );
+    my @cmd_args;
+    if ( $db_uri->host ) {
+        push @cmd_args, '--host', $db_uri->host;
+    }
+    if ( $db_uri->_port ) {
+        push @cmd_args, '--port', $db_uri->_port;
+    }
+    if ( $db_uri->user ) {
+        push @cmd_args, '--username', $db_uri->user;
+    }
+    local $ENV{PGPASSWORD} = $db_uri->password if $db_uri->password;
+
     my $ok = eval {
-        $self->_run_or_die( 'createdb', $self->_db_name );
-        $self->_run_or_die(
-            'sqitch', 'deploy', '--verify',
-            'db:pg:///' . $self->_db_name
-        );
+        $self->_run_or_die( 'createdb', @cmd_args, $self->_db_name );
+        $self->_run_or_die( 'sqitch', 'deploy', '--verify', $db_uri );
         $self->_run_or_die(
             'pg_dump',
             '--exclude-schema=sqitch',
@@ -184,6 +195,7 @@ sub _dump_database {
             '--no-privileges',
             '--no-tablespaces',
             '--file=' . $self->_dump_file,
+            @cmd_args,
             $self->_db_name,
         );
         1;
