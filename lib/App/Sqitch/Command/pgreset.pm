@@ -354,8 +354,13 @@ EOF
 }
 
 sub _run_or_die {
-    shift;
-    my @cmd = @_;
+    my $self = shift;
+    my @cmd  = @_;
+
+    if ( $self->sqitch->verbosity > 1 ) {
+        say "Running [@cmd]" or die $!;
+    }
+
     run3(
         \@cmd,
         undef,
