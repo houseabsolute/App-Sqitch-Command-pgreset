@@ -1,10 +1,9 @@
 package App::Sqitch::Command::pgreset;
 
-use v5.24;
+use v5.010;
 
 use strict;
 use warnings;
-use feature 'postderef', 'signatures';
 use autodie qw( :all );
 use namespace::autoclean;
 
@@ -49,14 +48,18 @@ has _reset_name => (
     is      => 'ro',
     isa     => NonEmptyStr,
     lazy    => 1,
-    default => sub ($self) { 'reset-' . $self->_today },
+    default => sub {
+        my $self = shift;
+        'reset-' . $self->_today;
+    },
 );
 
 has _dump_file => (
     is      => 'ro',
     isa     => File,
     lazy    => 1,
-    default => sub ($self) {
+    default => sub {
+        my $self = shift;
         $self->_temp_dir->file( $self->_reset_name . '.sql' );
     },
 );
@@ -74,7 +77,8 @@ has _deploy_schema_file => (
     is      => 'ro',
     isa     => File,
     lazy    => 1,
-    default => sub ($self) {
+    default => sub {
+        my $self = shift;
         $self->_cwd->file(
             'deploy',
             'initial-schema-' . $self->_today . '.sql'
@@ -86,7 +90,8 @@ has _deploy_functions_file => (
     is      => 'ro',
     isa     => File,
     lazy    => 1,
-    default => sub ($self) {
+    default => sub {
+        my $self = shift;
         $self->_cwd->file(
             'deploy',
             'initial-functions-' . $self->_today . '.sql'
@@ -98,14 +103,20 @@ has _project => (
     is      => 'ro',
     isa     => NonEmptyStr,
     lazy    => 1,
-    default => sub ($self) { $self->_real_target->plan->project },
+    default => sub {
+        my $self = shift;
+        $self->_real_target->plan->project;
+    },
 );
 
 has _db_name => (
     is      => 'ro',
     isa     => NonEmptyStr,
     lazy    => 1,
-    default => sub ($self) { $self->_project . '-sqitch-reset' },
+    default => sub {
+        my $self = shift;
+        $self->_project . '-sqitch-reset';
+    },
 );
 
 has _today => (
@@ -151,10 +162,11 @@ sub execute {
     $self->_real_target($target);
     my $engine = $target->engine;
     if ( $engine->name ne 'PostgreSQL' ) {
-        hurl
+        hurl __x(
             'The pgreset sqitch command only works with Postgres but your target is a '
-            . $engine->name
-            . ' database';
+                . $engine->name
+                . ' database',
+        );
     }
 
     $self->_dump_database;
@@ -186,9 +198,9 @@ sub _dump_database {
     local $ENV{PGPASSWORD} = $db_uri->password if $db_uri->password;
 
     my $ok = eval {
-        $self->_run_or_die( 'createdb', @cmd_args, $self->_db_name );
-        $self->_run_or_die( 'sqitch', 'deploy', '--verify', $db_uri );
-        $self->_run_or_die(
+        $self->sqitch->run( 'createdb', @cmd_args, $self->_db_name );
+        $self->sqitch->run( 'sqitch', 'deploy', '--verify', $db_uri );
+        $self->sqitch->run(
             'pg_dump',
             '--exclude-schema=sqitch',
             '--no-owner',
@@ -201,7 +213,7 @@ sub _dump_database {
         1;
     };
     my $err = $@;
-    $self->_run_or_die( 'dropdb', '--if-exists', $self->_db_name );
+    $self->sqitch->run( 'dropdb', '--if-exists', $self->_db_name );
     die $err unless $ok;
 
     return;
@@ -228,7 +240,7 @@ sub _start_new_sqitch {
 
     say 'Running sqitch init' or die $!;
     my $dir = pushd( $self->_cwd );
-    $self->_run_or_die(
+    $self->sqitch->run(
         qw( sqitch --quiet init --engine pg ),
         $self->_project
     );
@@ -306,14 +318,14 @@ sub _sqitch_add_dump {
     my $self = shift;
 
     my $dir = pushd( $self->_cwd );
-    $self->_run_or_die(
+    $self->sqitch->run(
         'sqitch', 'add',
         '--quiet',
         '--change-name', $self->_deploy_schema_file->basename =~ s/\.sql$//r,
         '--note', 'Deployment for database as it existed on ' . $self->_today,
     );
     if ( -f $self->_deploy_functions_file ) {
-        $self->_run_or_die(
+        $self->sqitch->run(
             'sqitch', 'add',
             '--quiet',
             '--change-name',
@@ -354,31 +366,6 @@ Then run this command:
 
 sqitch deploy --log-only \$db_uri
 EOF
-}
-
-sub _run_or_die {
-    my $self = shift;
-    my @cmd  = @_;
-
-    if ( $self->sqitch->verbosity > 1 ) {
-        say "Running [@cmd]" or die $!;
-    }
-
-    run3(
-        \@cmd,
-        undef,
-        \*STDOUT,
-        \*STDERR,
-    );
-    if ($?) {
-        my $cmd = join q{ }, @cmd;
-        my $err = "Error running $cmd\n";
-        $err .= "  * Got a non-zero exit code from $cmd: "
-            . ( $? >> 8 ) . "\n";
-        hurl $err;
-    }
-
-    return;
 }
 
 __PACKAGE__->meta->make_immutable;
